@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>イチゴサイズ選別カメラ</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #333; color: white; margin: 0; }
+        #video, #canvas { width: 100%; max-width: 600px; border: 2px solid #555; }
+        .controls { padding: 20px; }
+        button { padding: 15px 30px; font-size: 1.2rem; cursor: pointer; border-radius: 10px; border: none; background: #e74c3c; color: white; }
+        #resultImg { width: 100%; max-width: 600px; margin-top: 10px; display: none; }
+        .loading { display: none; color: #f1c40f; }
+    </style>
+</head>
+<body>
+
+    <h2>イチゴ選別アシスタント</h2>
+    
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <div class="controls">
+        <button id="captureBtn">サイズを解析する</button>
+        <p class="loading" id="loadingText">解析中... 10秒ほどかかる場合があります</p>
+    </div>
+
+    <h3>解析結果 (外部モニター用)</h3>
+    <img id="resultImg" alt="解析結果">
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const captureBtn = document.getElementById('captureBtn');
+        const resultImg = document.getElementById('resultImg');
+        const loadingText = document.getElementById('loadingText');
+
+        // 1. 背面カメラを起動
+        navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: { exact: "environment" } }, 
+            audio: false 
+        })
+        .then(stream => { video.srcObject = stream; })
+        .catch(err => {
+            alert("カメラが見つかりません。PCの場合は標準カメラを使います。");
+            navigator.mediaDevices.getUserMedia({ video: true }).then(s => video.srcObject = s);
+        });
+
+        // 2. シャッター＆送信
+        captureBtn.addEventListener('click', async () => {
+            // 解析中の表示
+            loadingText.style.display = 'block';
+            captureBtn.disabled = true;
+
+            // キャンバスに現在のフレームを描画
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // 画像をBlob（データ形式）に変換
+            canvas.toBlob(async (blob) => {
+                const formData = new FormData();
+                formData.append('file', blob, 'strawberry.jpg');
+
+                try {
+                    // ※ここにRenderなどで作ったPythonサーバーのURLを入れる
+                    const response = await fetch('https://YOUR-PYTHON-SERVER.render.com/analyze', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (response.ok) {
+                        const resBlob = await response.blob();
+                        const imageUrl = URL.createObjectURL(resBlob);
+                        resultImg.src = imageUrl;
+                        resultImg.style.display = 'block';
+                    }
+                } catch (error) {
+                    console.error('通信エラー:', error);
+                    alert('サーバーと通信できませんでした。URLを確認してください。');
+                } finally {
+                    loadingText.style.display = 'none';
+                    captureBtn.disabled = false;
+                }
+            }, 'image/jpeg', 0.8);
+        });
+    </script>
+</body>
+</html>
