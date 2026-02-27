@@ -3,87 +3,88 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>イチゴサイズ選別カメラ</title>
+    <title>イチゴサイズ解析プロトタイプ</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #333; color: white; margin: 0; }
-        #video, #canvas { width: 100%; max-width: 600px; border: 2px solid #555; }
-        .controls { padding: 20px; }
-        button { padding: 15px 30px; font-size: 1.2rem; cursor: pointer; border-radius: 10px; border: none; background: #e74c3c; color: white; }
-        #resultImg { width: 100%; max-width: 600px; margin-top: 10px; display: none; }
-        .loading { display: none; color: #f1c40f; }
+        body { font-family: sans-serif; text-align: center; background: #222; color: white; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        #resultImg { width: 100%; margin-top: 20px; border: 2px solid #555; display: none; }
+        .upload-area { border: 2px dashed #888; padding: 40px 20px; margin: 20px 0; border-radius: 15px; background: #333; }
+        input[type="file"] { display: none; }
+        .btn { padding: 15px 30px; font-size: 1.1rem; cursor: pointer; border-radius: 10px; border: none; background: #e74c3c; color: white; transition: 0.3s; }
+        .btn:hover { background: #c0392b; }
+        .btn-select { background: #3498db; margin-bottom: 10px; }
+        .loading { display: none; color: #f1c40f; margin-top: 10px; }
     </style>
 </head>
 <body>
 
-    <h2>イチゴ選別アシスタント</h2>
-    
-    <video id="video" autoplay playsinline></video>
-    <canvas id="canvas" style="display:none;"></canvas>
+    <div class="container">
+        <h2>イチゴサイズ解析(テスト用)</h2>
+        <p>過去のイチゴ画像をアップロードして<br>解析結果を確認してください</p>
 
-    <div class="controls">
-        <button id="captureBtn">サイズを解析する</button>
-        <p class="loading" id="loadingText">解析中... 10秒ほどかかる場合があります</p>
+        <div class="upload-area">
+            <label for="fileInput" class="btn btn-select">写真を選択する</label>
+            <input type="file" id="fileInput" accept="image/*">
+            <p id="fileName">ファイルが選択されていません</p>
+            <button id="uploadBtn" class="btn">解析を実行する</button>
+        </div>
+
+        <p class="loading" id="loadingText">AI解析中... しばらくお待ちください</p>
+
+        <h3>解析結果</h3>
+        <img id="resultImg" alt="解析結果がここに表示されます">
     </div>
 
-    <h3>解析結果 (外部モニター用)</h3>
-    <img id="resultImg" alt="解析結果">
-
     <script>
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const captureBtn = document.getElementById('captureBtn');
+        const fileInput = document.getElementById('fileInput');
+        const fileName = document.getElementById('fileName');
+        const uploadBtn = document.getElementById('uploadBtn');
         const resultImg = document.getElementById('resultImg');
         const loadingText = document.getElementById('loadingText');
 
-        // 1. 背面カメラを起動
-        navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: { exact: "environment" } }, 
-            audio: false 
-        })
-        .then(stream => { video.srcObject = stream; })
-        .catch(err => {
-            alert("カメラが見つかりません。PCの場合は標準カメラを使います。");
-            navigator.mediaDevices.getUserMedia({ video: true }).then(s => video.srcObject = s);
+        // ファイルが選択されたら名前を表示
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                fileName.innerText = e.target.files[0].name;
+            }
         });
 
-        // 2. シャッター＆送信
-        captureBtn.addEventListener('click', async () => {
-            // 解析中の表示
+        // サーバーへ送信
+        uploadBtn.addEventListener('click', async () => {
+            if (fileInput.files.length === 0) {
+                alert("画像を選択してください");
+                return;
+            }
+
             loadingText.style.display = 'block';
-            captureBtn.disabled = true;
+            uploadBtn.disabled = true;
+            resultImg.style.display = 'none';
 
-            // キャンバスに現在のフレームを描画
-            const context = canvas.getContext('2d');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
 
-            // 画像をBlob（データ形式）に変換
-            canvas.toBlob(async (blob) => {
-                const formData = new FormData();
-                formData.append('file', blob, 'strawberry.jpg');
+            try {
+                // RenderのURLに書き換えてください
+                const response = await fetch('https://strawberry-shot-backend.onrender.com/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
 
-                try {
-                    // ※ここにRenderなどで作ったPythonサーバーのURLを入れる
-                    const response = await fetch('https://strawberry-shot-backend.onrender.com/analyze', {
-                        method: 'POST',
-                        body: formData
-                    });
-
-                    if (response.ok) {
-                        const resBlob = await response.blob();
-                        const imageUrl = URL.createObjectURL(resBlob);
-                        resultImg.src = imageUrl;
-                        resultImg.style.display = 'block';
-                    }
-                } catch (error) {
-                    console.error('通信エラー:', error);
-                    alert('サーバーと通信できませんでした。URLを確認してください。');
-                } finally {
-                    loadingText.style.display = 'none';
-                    captureBtn.disabled = false;
+                if (response.ok) {
+                    const resBlob = await response.blob();
+                    const imageUrl = URL.createObjectURL(resBlob);
+                    resultImg.src = imageUrl;
+                    resultImg.style.display = 'block';
+                } else {
+                    alert("サーバーエラーが発生しました");
                 }
-            }, 'image/jpeg', 0.8);
+            } catch (error) {
+                console.error('通信エラー:', error);
+                alert('サーバーに接続できません。URLが正しいか、Renderが起動しているか確認してください。');
+            } finally {
+                loadingText.style.display = 'none';
+                uploadBtn.disabled = false;
+            }
         });
     </script>
 </body>
